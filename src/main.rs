@@ -1,9 +1,7 @@
 use clap::{Parser, Subcommand};
-use colored::*;
 use anyhow::{Result, Context};
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
 use std::str::FromStr;
-use walkdir::WalkDir;
 
 use logalyzer::*;
 
@@ -64,7 +62,7 @@ enum Commands {
         #[arg(required = true, help = "Log file or directory path")]
         path: PathBuf,
 
-        #[arg(required = true, help = "Search patterns")]
+        #[arg(required = true, trailing_var_arg = true, help = "Search patterns")]
         patterns: Vec<String>,
 
         #[arg(short = 'i', long, help = "Case insensitive search (default)")]
@@ -172,21 +170,30 @@ fn main() -> Result<()> {
     }
 }
 
-fn collect_files(path: &std::path::Path) -> Vec<PathBuf> {
+fn collect_files(path: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
 
     if path.is_file() {
         files.push(path.to_path_buf());
     } else if path.is_dir() {
-        for entry in WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
-            if entry.file_type().is_file() {
-                files.push(entry.path().to_path_buf());
-            }
-        }
+        walk_dir(path, &mut files);
     }
 
     files.sort();
     files
+}
+
+fn walk_dir(dir: &Path, files: &mut Vec<PathBuf>) {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk_dir(&path, files);
+            } else if path.is_file() {
+                files.push(path);
+            }
+        }
+    }
 }
 
 fn parse_log_format(format: &str) -> Result<parser::LogFormat> {
@@ -220,7 +227,7 @@ fn cmd_parse(path: &std::path::Path, format_str: &str, lines: Option<usize>, out
         let reader = ChunkReader::new(file_path, 1024 * 1024)?;
 
         if files.len() > 1 {
-            println!("\n{}", format!("=== {} ===", file_path.display()).bold());
+            println!("\n{}", color::bold(&format!("=== {} ===", file_path.display())));
         }
 
         let result = reader.read_lines(|line, _index| {
@@ -285,7 +292,7 @@ fn cmd_filter(path: &std::path::Path, levels: Option<&str>, min_level: Option<&s
         let reader = ChunkReader::new(file_path, 1024 * 1024)?;
 
         if files.len() > 1 {
-            println!("\n{}", format!("=== {} ===", file_path.display()).bold());
+            println!("\n{}", color::bold(&format!("=== {} ===", file_path.display())));
         }
 
         reader.read_lines(|line, index| {
@@ -299,7 +306,7 @@ fn cmd_filter(path: &std::path::Path, levels: Option<&str>, min_level: Option<&s
         })?;
     }
 
-    eprintln!("\nMatched {} lines", matched_count.to_string().green().bold());
+    eprintln!("\nMatched {} lines", color::green_bold(&matched_count.to_string()));
     Ok(())
 }
 
@@ -335,13 +342,13 @@ fn cmd_search(path: &std::path::Path, patterns: &[String], case_sensitive: bool,
                     total_matches += 1;
                 } else {
                     if first_file && files.len() > 1 {
-                        println!("\n{}", format!("=== {} ===", file_path.display()).bold());
+                        println!("\n{}", color::bold(&format!("=== {} ===", file_path.display())));
                         first_file = false;
                     }
 
                     let highlighted = searcher.highlight_text(line);
                     if show_line_numbers {
-                        println!("{}: {}", (line_num + 1).to_string().cyan(), highlighted);
+                        println!("{}: {}", color::cyan(&(line_num + 1).to_string()), highlighted);
                     } else {
                         println!("{}", highlighted);
                     }
@@ -369,8 +376,8 @@ fn cmd_search(path: &std::path::Path, patterns: &[String], case_sensitive: bool,
 
     eprintln!(
         "\nFound {} matches in {} of {} files",
-        total_matches.to_string().green().bold(),
-        files_with_matches.to_string().yellow().bold(),
+        color::green_bold(&total_matches.to_string()),
+        color::yellow_bold(&files_with_matches.to_string()),
         files.len()
     );
 
@@ -500,22 +507,22 @@ fn cmd_count(path: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
-fn colorize_output(entry: &LogEntry, output: &str, format: converter::OutputFormat) -> ColoredString {
+fn colorize_output(entry: &LogEntry, output: &str, format: converter::OutputFormat) -> String {
     match format {
         converter::OutputFormat::Text => {
             if let Some(level) = entry.level {
                 match level {
-                    LogLevel::Trace => output.dimmed(),
-                    LogLevel::Debug => output.cyan(),
-                    LogLevel::Info => output.green(),
-                    LogLevel::Warn => output.yellow(),
-                    LogLevel::Error => output.red(),
-                    LogLevel::Fatal => output.magenta().bold(),
+                    LogLevel::Trace => color::dimmed(output),
+                    LogLevel::Debug => color::cyan(output),
+                    LogLevel::Info => color::green(output),
+                    LogLevel::Warn => color::yellow(output),
+                    LogLevel::Error => color::red(output),
+                    LogLevel::Fatal => color::magenta_bold(output),
                 }
             } else {
-                output.normal()
+                output.to_string()
             }
         }
-        _ => output.normal(),
+        _ => output.to_string(),
     }
 }

@@ -1,6 +1,6 @@
-use colored::*;
 use regex::Regex;
 use crate::parser::LogEntry;
+use crate::color;
 
 #[derive(Debug, Clone)]
 pub struct Searcher {
@@ -107,7 +107,7 @@ impl Searcher {
                     result = re
                         .replace_all(&result, |caps: &regex::Captures| {
                             caps.get(0)
-                                .map(|m| m.as_str().red().bold().to_string())
+                                .map(|m| color::red_bold(m.as_str()))
                                 .unwrap_or_default()
                         })
                         .to_string();
@@ -115,7 +115,7 @@ impl Searcher {
             } else {
                 let search_text = &pattern.text;
                 if self.case_sensitive {
-                    result = result.replace(search_text, &search_text.red().bold().to_string());
+                    result = result.replace(search_text, &color::red_bold(search_text));
                 } else {
                     result = highlight_case_insensitive(&result, search_text);
                 }
@@ -162,7 +162,7 @@ fn highlight_case_insensitive(text: &str, pattern: &str) -> String {
         let abs_end = abs_start + pattern_len;
 
         result.push_str(&text[last_end..abs_start]);
-        result.push_str(&text[abs_start..abs_end].red().bold().to_string());
+        result.push_str(&color::red_bold(&text[abs_start..abs_end]));
 
         last_end = abs_end;
     }

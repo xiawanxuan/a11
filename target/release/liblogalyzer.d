@@ -1,0 +1,1 @@
+E:\trae3\a11\target\release\liblogalyzer.rlib: E:\trae3\a11\src\chunk_reader.rs E:\trae3\a11\src\color.rs E:\trae3\a11\src\converter.rs E:\trae3\a11\src\filter.rs E:\trae3\a11\src\lib.rs E:\trae3\a11\src\parser.rs E:\trae3\a11\src\search.rs

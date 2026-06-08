@@ -3,6 +3,7 @@ pub mod filter;
 pub mod search;
 pub mod converter;
 pub mod chunk_reader;
+pub mod color;
 
 pub use parser::{LogEntry, LogLevel, LogParser};
 pub use filter::LogFilter;
