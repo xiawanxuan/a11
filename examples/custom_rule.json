@@ -1,0 +1,18 @@
+[
+  {
+    "name": "standard_log",
+    "pattern": "^\\[(?<time>[^\\]]+)\\]\\s+(?<level>\\w+)\\s+<(?<module>[^>]+)>\\s+(?<msg>.*)$",
+    "timestamp_field": "time",
+    "level_field": "level",
+    "message_field": "msg",
+    "module_field": "module",
+    "level_mappings": {}
+  },
+  {
+    "name": "simple_level",
+    "pattern": "^(?<level>TRACE|DEBUG|INFO|WARN|ERROR|FATAL):\\s+(?<msg>.*)$",
+    "level_field": "level",
+    "message_field": "msg",
+    "level_mappings": {}
+  }
+]

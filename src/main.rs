@@ -137,6 +137,63 @@ enum Commands {
         #[arg(required = true, help = "Log file or directory path")]
         path: PathBuf,
     },
+
+    #[command(about = "Parse logs with custom rules")]
+    CustomParse {
+        #[arg(required = true, help = "Log file path")]
+        path: PathBuf,
+
+        #[arg(required = true, short = 'r', long, help = "Custom rule JSON file")]
+        rule: PathBuf,
+
+        #[arg(short = 'n', long, help = "Number of lines to display")]
+        lines: Option<usize>,
+
+        #[arg(long, help = "Output format")]
+        output: Option<String>,
+    },
+
+    #[command(about = "Monitor log file in real-time with alerts")]
+    Monitor {
+        #[arg(required = true, help = "Log file path")]
+        path: PathBuf,
+
+        #[arg(short = 'f', long, default_value = "auto", help = "Log format")]
+        format: String,
+
+        #[arg(short = 'l', long, help = "Alert on log level: trace,debug,info,warn,error,fatal")]
+        alert_level: Option<String>,
+
+        #[arg(short = 'p', long, default_value_t = 500, help = "Poll interval in milliseconds")]
+        poll_interval: u64,
+
+        #[arg(long, help = "Filter by minimum log level")]
+        min_level: Option<String>,
+
+        #[arg(long, help = "Search pattern to filter")]
+        pattern: Option<String>,
+
+        #[arg(long, help = "Don't follow new lines")]
+        no_follow: bool,
+    },
+
+    #[command(about = "Generate aggregation report")]
+    Report {
+        #[arg(required = true, help = "Log file or directory path")]
+        path: PathBuf,
+
+        #[arg(short = 'f', long, default_value = "auto", help = "Log format")]
+        format: String,
+
+        #[arg(short = 'g', long, help = "Aggregate fields (comma-separated): level,module,hour,minute,status")]
+        group_by: Option<String>,
+
+        #[arg(short = 'o', long, help = "Output format: text,json,html,markdown")]
+        output_format: Option<String>,
+
+        #[arg(short = 'O', long, help = "Output file path")]
+        output_file: Option<PathBuf>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -166,6 +223,15 @@ fn main() -> Result<()> {
         }
         Commands::Count { path } => {
             cmd_count(&path)
+        }
+        Commands::CustomParse { path, rule, lines, output } => {
+            cmd_custom_parse(&path, &rule, lines, output.as_deref())
+        }
+        Commands::Monitor { path, format, alert_level, poll_interval, min_level, pattern, no_follow } => {
+            cmd_monitor(&path, &format, alert_level.as_deref(), poll_interval, min_level.as_deref(), pattern.as_deref(), !no_follow)
+        }
+        Commands::Report { path, format, group_by, output_format, output_file } => {
+            cmd_report(&path, &format, group_by.as_deref(), output_format.as_deref(), output_file.as_deref())
         }
     }
 }
@@ -525,4 +591,179 @@ fn colorize_output(entry: &LogEntry, output: &str, format: converter::OutputForm
         }
         _ => output.to_string(),
     }
+}
+
+fn cmd_custom_parse(path: &Path, rule_path: &Path, lines: Option<usize>, output_format: Option<&str>) -> Result<()> {
+    let rule_set = CustomRuleSet::load_from_file(rule_path)
+        .map_err(|e| anyhow::anyhow!(e))?;
+
+    if rule_set.is_empty() {
+        return Err(anyhow::anyhow!("No custom rules loaded"));
+    }
+
+    eprintln!("Loaded {} custom rule(s)", rule_set.parser_count());
+
+    let reader = ChunkReader::new(path, 1024 * 1024)?;
+    let out_fmt = output_format
+        .map(|f| parse_output_format(f))
+        .transpose()?
+        .unwrap_or(converter::OutputFormat::Text);
+    let converter = FormatConverter::new(out_fmt);
+
+    let mut total = 0;
+    let mut matched = 0;
+    let max_lines = lines.unwrap_or(usize::MAX);
+
+    reader.read_lines(|line, index| {
+        if total >= max_lines {
+            return Ok(false);
+        }
+        total += 1;
+
+        if let Some(entry) = rule_set.parse_line(line, index) {
+            let output = converter.convert_entry(&entry);
+            println!("{}", colorize_output(&entry, &output, out_fmt));
+            matched += 1;
+        }
+        Ok(true)
+    })?;
+
+    eprintln!("\nMatched {} of {} lines with custom rules", matched, total);
+    Ok(())
+}
+
+fn cmd_monitor(
+    path: &Path,
+    format_str: &str,
+    alert_level: Option<&str>,
+    poll_ms: u64,
+    min_level: Option<&str>,
+    pattern: Option<&str>,
+    follow: bool,
+) -> Result<()> {
+    let format = parse_log_format(format_str)?;
+    let parser = LogParser::new(format);
+
+    let mut monitor = LogMonitor::new(path, parser)
+        .with_poll_interval(std::time::Duration::from_millis(poll_ms))
+        .with_follow(follow);
+
+    if let Some(level_str) = min_level {
+        let level = LogLevel::from_str(level_str)
+            .map_err(|e| anyhow::anyhow!(e))?;
+        let filter = LogFilter::new().with_min_level(level);
+        monitor = monitor.with_filter(filter);
+    }
+
+    if let Some(pat) = pattern {
+        let mut searcher = Searcher::new(vec![pat.to_string()]);
+        searcher.build().map_err(|e| anyhow::anyhow!(e))?;
+        monitor = monitor.with_searcher(searcher);
+    }
+
+    if let Some(level_str) = alert_level {
+        let level = LogLevel::from_str(level_str)
+            .map_err(|e| anyhow::anyhow!(e))?;
+        let rule = AlertRule {
+            name: format!("{}_alert", level.as_str().to_lowercase()),
+            pattern: None,
+            level: Some(level),
+            min_count: 1,
+            window_seconds: 10,
+            cooldown_seconds: 30,
+        };
+        monitor.add_alert_rule(rule);
+    }
+
+    eprintln!("Monitoring: {}", path.display());
+    eprintln!("Poll interval: {}ms", poll_ms);
+    eprintln!("Follow mode: {}", if follow { "on" } else { "off" });
+    eprintln!("(Press Ctrl+C to stop)");
+    eprintln!();
+
+    let _running = monitor.running_clone();
+
+    let result = monitor.start(|entry, is_alert| {
+        if is_alert {
+            println!("{} [ALERT] {}",
+                color::red_bold("⚠"),
+                color::red_bold(&entry.message));
+        } else {
+            let level_str = entry.level.map(|l| format!("[{:>7}]", l.as_str())).unwrap_or_default();
+            let ts = entry.timestamp.as_deref().unwrap_or("");
+            println!("{} {} {}", ts, level_str, entry.message);
+        }
+    });
+
+    match result {
+        Ok(count) => {
+            eprintln!("\nMonitoring stopped. Processed {} lines.", count);
+            Ok(())
+        }
+        Err(e) => Err(anyhow::anyhow!(e)),
+    }
+}
+
+fn cmd_report(
+    path: &Path,
+    format_str: &str,
+    group_by: Option<&str>,
+    output_format: Option<&str>,
+    output_file: Option<&Path>,
+) -> Result<()> {
+    let files = collect_files(path);
+    if files.is_empty() {
+        return Err(anyhow::anyhow!("No files found"));
+    }
+
+    let format = parse_log_format(format_str)?;
+    let parser = LogParser::new(format);
+
+    let fields: Vec<AggregateField> = if let Some(gb) = group_by {
+        gb.split(',')
+            .map(|s| AggregateField::from_str(s.trim()).map_err(|e| anyhow::anyhow!(e)))
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        vec![AggregateField::Level, AggregateField::Module]
+    };
+
+    let mut report = ReportGenerator::with_fields(&fields);
+
+    for file_path in &files {
+        let reader = ChunkReader::new(file_path, 1024 * 1024)?;
+
+        if files.len() > 1 {
+            eprintln!("Processing: {}", file_path.display());
+        }
+
+        reader.read_lines(|line, index| {
+            let entry = parser.parse_line(line, index);
+            report.add_entry(&entry);
+            Ok(true)
+        })?;
+    }
+
+    let out_fmt = output_format.unwrap_or("text");
+
+    let content = match out_fmt {
+        "json" => Some(serde_json::to_string_pretty(&report.to_json())?),
+        "html" => Some(report.to_html()),
+        "markdown" | "md" => Some(report.to_markdown()),
+        "text" | _ => {
+            report.print_summary();
+            None
+        }
+    };
+
+    if let Some(ref text) = content {
+        if let Some(out_path) = output_file {
+            std::fs::write(out_path, text)
+                .with_context(|| format!("Failed to write report to {}", out_path.display()))?;
+            eprintln!("Report written to: {}", out_path.display());
+        } else {
+            println!("{}", text);
+        }
+    }
+
+    Ok(())
 }
