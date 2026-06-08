@@ -1,0 +1,14 @@
+{"timestamp":"2024-01-15T10:23:45Z","level":"INFO","module":"app","message":"Starting application server on port 8080"}
+{"timestamp":"2024-01-15T10:23:46Z","level":"DEBUG","module":"database","message":"Initializing database connection pool"}
+{"timestamp":"2024-01-15T10:23:46Z","level":"INFO","module":"database","message":"Connected to PostgreSQL database"}
+{"timestamp":"2024-01-15T10:23:47Z","level":"INFO","module":"cache","message":"Redis cache initialized successfully"}
+{"timestamp":"2024-01-15T10:23:48Z","level":"WARN","module":"config","message":"Missing optional config parameter: max_connections"}
+{"timestamp":"2024-01-15T10:24:01Z","level":"INFO","module":"api","message":"GET /api/users - 200 OK - 23ms","duration_ms":23,"status_code":200}
+{"timestamp":"2024-01-15T10:24:05Z","level":"INFO","module":"api","message":"POST /api/orders - 201 Created - 45ms","duration_ms":45,"status_code":201}
+{"timestamp":"2024-01-15T10:24:10Z","level":"WARN","module":"api","message":"Rate limit approaching for client 192.168.1.100"}
+{"timestamp":"2024-01-15T10:24:15Z","level":"ERROR","module":"database","message":"Connection timeout while querying users table","error":"timeout"}
+{"timestamp":"2024-01-15T10:24:16Z","level":"INFO","module":"database","message":"Retrying database connection..."}
+{"timestamp":"2024-01-15T10:24:17Z","level":"INFO","module":"database","message":"Database connection restored"}
+{"timestamp":"2024-01-15T10:24:30Z","level":"ERROR","module":"payment","message":"Payment gateway returned error: insufficient_funds"}
+{"timestamp":"2024-01-15T10:24:35Z","level":"FATAL","module":"security","message":"Detected potential SQL injection attempt in input"}
+{"timestamp":"2024-01-15T10:24:40Z","level":"INFO","module":"metrics","message":"Memory usage: 256MB, CPU: 12.5%"}
